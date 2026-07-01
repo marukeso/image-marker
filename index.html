@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>画像にマーク（赤丸連番・星）</title>
+<style>
+  :root { --gap: 12px; }
+  body {
+    font-family: system-ui, "Segoe UI", "Meiryo", sans-serif;
+    margin: 0;
+    padding: var(--gap);
+    background: #f4f4f5;
+    color: #222;
+  }
+  h1 { font-size: 16px; margin: 0 0 var(--gap); }
+
+  /* ツールバー（スクロールしても上に固定） */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: var(--gap);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f4f4f5;
+    padding: var(--gap) 0;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .toolbar button,
+  .toolbar label {
+    font-size: 14px;
+    padding: 7px 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+    user-select: none;
+  }
+  .toolbar button:hover,
+  .toolbar label:hover { background: #f0f0f0; }
+  .toolbar button:disabled { opacity: .4; cursor: default; }
+
+  /* 選択中のツール */
+  .tool.is-active {
+    background: #ffe3e3;
+    border-color: #ff8787;
+    font-weight: bold;
+  }
+
+  /* 開始番号の入力欄 */
+  .toolbar .numlabel {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    padding: 4px 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #fff;
+    cursor: default;
+  }
+  .toolbar .numlabel:hover { background: #fff; }
+  .numlabel input {
+    width: 60px;
+    font-size: 14px;
+    padding: 4px 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+
+  /* 3つの画像パネルを横並び */
+  .panels {
+    display: flex;
+    gap: var(--gap);
+    align-items: flex-start;
+  }
+  .panel {
+    flex: 1 1 0;      /* 3等分 */
+    min-width: 0;
+  }
+
+  /* キャンバス置き場（兼ドロップ領域） */
+  .stage {
+    position: relative;
+    border: 2px dashed #bbb;
+    border-radius: 8px;
+    background: #fff;
+    min-height: 200px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    overflow: auto;
+  }
+  .stage.has-drag { border-color: #ff8787; background: #fff5f5; }
+  .stage canvas {
+    max-width: 100%;  /* パネル幅いっぱいに表示 */
+    height: auto;
+    cursor: crosshair;
+    display: none;    /* 画像読み込み前は隠す */
+  }
+  .placeholder {
+    color: #999;
+    font-size: 13px;
+    padding: 30px 16px;
+    text-align: center;
+    cursor: pointer;
+    width: 100%;
+  }
+  .hint { font-size: 12px; color: #888; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>画像にマーク（赤丸連番・星）</h1>
+
+  <div class="toolbar">
+    <button class="tool" id="toolStar" data-tool="star">★ 星マーク</button>
+    <button class="tool is-active" id="toolCircle" data-tool="circle">① 赤丸＋連番</button>
+
+    <label class="numlabel">開始番号
+      <input type="number" id="startNum" value="1" min="0" step="1">
+    </label>
+
+    <button id="undoBtn" disabled>取り消し (Ctrl+Z)</button>
+    <button id="clearBtn" disabled>全消し</button>
+    <button id="saveBtn" disabled>PNGで保存</button>
+  </div>
+
+  <div class="panels" id="panels"><!-- パネルはJSで3つ生成 --></div>
+  <p class="hint">各枠にクリックorドロップで画像を読み込み、クリックでマークを置く。番号は3枚を通して置いた順に連番になります。取り消しは全体で直前の1つ。</p>
+
+<script>
+(() => {
+  "use strict";
+
+  const PANEL_COUNT = 3;
+  const panelsEl = document.getElementById("panels");
+  const undoBtn = document.getElementById("undoBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const saveBtn = document.getElementById("saveBtn");
+  const startNum = document.getElementById("startNum");
+  const toolButtons = document.querySelectorAll(".tool");
+
+  let currentTool = "circle";
+  const panels = [];       // {img, canvas, ctx, stage, placeholder, fileInput}
+  let marks = [];          // 全パネル共通のマーク配列 {panel, type, x, y} ※置いた順
+
+  // ---- パネルを3つ生成 ----
+  for (let i = 0; i < PANEL_COUNT; i++) {
+    const panelEl = document.createElement("div");
+    panelEl.className = "panel";
+
+    const stage = document.createElement("div");
+    stage.className = "stage";
+
+    const placeholder = document.createElement("div");
+    placeholder.className = "placeholder";
+    placeholder.innerHTML = `画像${i + 1}<br>クリックまたはドロップで読み込み`;
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = "image/*";
+    fileInput.style.display = "none";
+
+    stage.append(placeholder, canvas);
+    panelEl.append(stage, fileInput);
+    panelsEl.append(panelEl);
+
+    const p = { img: null, canvas, ctx, stage, placeholder, fileInput };
+    panels.push(p);
+    wirePanel(p, i);
+  }
+
+  // マークの見た目サイズ（画像の大きさに合わせて自動調整）
+  function markRadius(img) {
+    if (!img) return 24;
+    return Math.max(36, Math.round(Math.min(img.width, img.height) * 0.075));
+  }
+
+  // ---- 全パネルを描き直す（通し番号で描画） ----
+  function redrawAll() {
+    // まず各パネルの下地（画像）を描く
+    for (const p of panels) {
+      if (!p.img) continue;
+      p.canvas.width = p.img.width;
+      p.canvas.height = p.img.height;
+      p.ctx.drawImage(p.img, 0, 0);
+    }
+    // 置いた順にマークを描く。赤丸だけを通しでカウント
+    const start = parseInt(startNum.value, 10) || 0;
+    let count = 0;
+    for (const m of marks) {
+      const p = panels[m.panel];
+      if (!p || !p.img) continue;
+      const r = markRadius(p.img);
+      if (m.type === "circle") {
+        drawCircle(p.ctx, m.x, m.y, r, start + count);
+        count++;
+      } else {
+        drawStar(p.ctx, m.x, m.y, r);
+      }
+    }
+  }
+
+  // 赤丸＋数字
+  function drawCircle(ctx, x, y, r, num) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,0,0,0.85)";
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, r * 0.12);
+    ctx.strokeStyle = "#b00000";
+    ctx.stroke();
+
+    ctx.fillStyle = "#fff";
+    ctx.font = `bold ${Math.round(r * 1.1)}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(num), x, y + r * 0.05);
+  }
+
+  // 星マーク（5角の星・黄色）
+  function drawStar(ctx, x, y, r) {
+    const spikes = 5;
+    const outer = r;
+    const inner = r * 0.45;
+    ctx.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+      const rad = (i % 2 === 0) ? outer : inner;
+      const ang = (Math.PI / spikes) * i - Math.PI / 2;
+      const px = x + Math.cos(ang) * rad;
+      const py = y + Math.sin(ang) * rad;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255,204,0,0.95)";
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, r * 0.12);
+    ctx.strokeStyle = "#e0a800";
+    ctx.stroke();
+  }
+
+  // ---- ボタンの有効/無効 ----
+  function anyImage() { return panels.some((p) => p.img); }
+  function updateButtons() {
+    undoBtn.disabled = marks.length === 0;
+    clearBtn.disabled = marks.length === 0;
+    saveBtn.disabled = !anyImage();
+  }
+
+  // ---- 画像の読み込み（指定パネルへ） ----
+  function loadImageFile(panel, file) {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const image = new Image();
+      image.onload = () => {
+        panel.img = image;
+        panel.placeholder.style.display = "none";
+        panel.canvas.style.display = "block";
+        redrawAll();
+        updateButtons();
+      };
+      image.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ---- クリック位置 → キャンバス座標（表示縮小ぶんを補正） ----
+  function canvasPos(canvas, evt) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width / rect.width;
+    const sy = canvas.height / rect.height;
+    return {
+      x: (evt.clientX - rect.left) * sx,
+      y: (evt.clientY - rect.top) * sy
+    };
+  }
+
+  // ---- パネルごとのイベント配線 ----
+  function wirePanel(panel, index) {
+    // クリックでマーク設置
+    panel.canvas.addEventListener("click", (e) => {
+      if (!panel.img) return;
+      const pos = canvasPos(panel.canvas, e);
+      marks.push({ panel: index, type: currentTool, x: pos.x, y: pos.y });
+      redrawAll();
+      updateButtons();
+    });
+
+    // 空枠クリックでファイル選択
+    panel.placeholder.addEventListener("click", () => panel.fileInput.click());
+    panel.fileInput.addEventListener("change", (e) => loadImageFile(panel, e.target.files[0]));
+
+    // ドラッグ＆ドロップ
+    panel.stage.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      panel.stage.classList.add("has-drag");
+    });
+    panel.stage.addEventListener("dragleave", () => panel.stage.classList.remove("has-drag"));
+    panel.stage.addEventListener("drop", (e) => {
+      e.preventDefault();
+      panel.stage.classList.remove("has-drag");
+      loadImageFile(panel, e.dataTransfer.files[0]);
+    });
+  }
+
+  // ---- 取り消し・全消し ----
+  function undo() {
+    if (marks.length === 0) return;
+    marks.pop();
+    redrawAll();
+    updateButtons();
+  }
+  undoBtn.addEventListener("click", undo);
+
+  clearBtn.addEventListener("click", () => {
+    marks = [];
+    redrawAll();
+    updateButtons();
+  });
+
+  // ---- 保存：画像のあるパネルを1枚ずつPNGで書き出す ----
+  saveBtn.addEventListener("click", () => {
+    let n = 0;
+    panels.forEach((p, i) => {
+      if (!p.img) return;
+      n++;
+      const a = document.createElement("a");
+      a.download = `marked-${i + 1}.png`;
+      a.href = p.canvas.toDataURL("image/png");
+      a.click();
+    });
+  });
+
+  // ---- ツール切り替え ----
+  toolButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      currentTool = btn.dataset.tool;
+      toolButtons.forEach((b) => b.classList.toggle("is-active", b === btn));
+    });
+  });
+
+  // 開始番号を変えたら描き直す
+  startNum.addEventListener("input", () => redrawAll());
+
+  // Ctrl+Z で取り消し
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      undo();
+    }
+  });
+})();
+</script>
+</body>
+</html>
