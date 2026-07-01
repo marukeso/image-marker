@@ -43,32 +43,35 @@
   .toolbar label:hover { background: #f0f0f0; }
   .toolbar button:disabled { opacity: .4; cursor: default; }
 
-  /* 選択中のツール */
-  .tool.is-active {
-    background: #ffe3e3;
-    border-color: #ff8787;
-    font-weight: bold;
-  }
+  /* 選択中のツール（各色に対応） */
+  .tool.is-active { font-weight: bold; }
+  #toolStar.is-active   { background: #fff7d6; border-color: #f0c000; } /* 黄 */
+  #toolCircle.is-active { background: #ffe3e3; border-color: #ff8787; } /* 赤 */
+  #toolAlpha.is-active  { background: #e3ffe6; border-color: #4caf50; } /* 緑 */
 
-  /* 開始番号の入力欄 */
+  /* 開始番号・開始文字の入力欄（枠なし・ボタンを目立たせる） */
   .toolbar .numlabel {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     font-size: 14px;
-    padding: 4px 10px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    background: #fff;
+    padding: 4px 4px;
+    border: none;
+    background: transparent;
     cursor: default;
+    color: #555;
   }
-  .toolbar .numlabel:hover { background: #fff; }
+  .toolbar .numlabel:hover { background: transparent; }
   .numlabel input {
     width: 60px;
     font-size: 14px;
     padding: 4px 6px;
     border: 1px solid #ccc;
     border-radius: 4px;
+  }
+  .numlabel input#startAlpha {
+    width: 36px;
+    text-transform: uppercase;
   }
 
   /* 3つの画像パネルを横並び */
@@ -117,10 +120,15 @@
 
   <div class="toolbar">
     <button class="tool" id="toolStar" data-tool="star">★ 星マーク</button>
-    <button class="tool is-active" id="toolCircle" data-tool="circle">① 赤丸＋連番</button>
 
+    <button class="tool is-active" id="toolCircle" data-tool="circle">① 赤丸＋連番</button>
     <label class="numlabel">開始番号
       <input type="number" id="startNum" value="1" min="0" step="1">
+    </label>
+
+    <button class="tool" id="toolAlpha" data-tool="alpha">Ⓐ 緑丸＋アルファベット</button>
+    <label class="numlabel">開始文字
+      <input type="text" id="startAlpha" value="A" maxlength="2" size="2">
     </label>
 
     <button id="undoBtn" disabled>取り消し (Ctrl+Z)</button>
@@ -129,7 +137,7 @@
   </div>
 
   <div class="panels" id="panels"><!-- パネルはJSで3つ生成 --></div>
-  <p class="hint">各枠にクリックorドロップで画像を読み込み、クリックでマークを置く。番号は3枚を通して置いた順に連番になります。取り消しは全体で直前の1つ。</p>
+  <p class="hint">各枠にクリックorドロップで画像を読み込み、クリックでマークを置く。番号・アルファベットは3枚を通して置いた順にそれぞれ連番になります。取り消しは全体で直前の1つ。</p>
 
 <script>
 (() => {
@@ -141,6 +149,7 @@
   const clearBtn = document.getElementById("clearBtn");
   const saveBtn = document.getElementById("saveBtn");
   const startNum = document.getElementById("startNum");
+  const startAlpha = document.getElementById("startAlpha");
   const toolButtons = document.querySelectorAll(".tool");
 
   let currentTool = "circle";
@@ -191,37 +200,64 @@
       p.canvas.height = p.img.height;
       p.ctx.drawImage(p.img, 0, 0);
     }
-    // 置いた順にマークを描く。赤丸だけを通しでカウント
-    const start = parseInt(startNum.value, 10) || 0;
-    let count = 0;
+    // 置いた順にマークを描く。赤丸とアルファベットは別々に通しでカウント
+    const startN = parseInt(startNum.value, 10) || 0;
+    const startA = alphaToIndex(startAlpha.value);
+    let countN = 0;   // 赤丸連番
+    let countA = 0;   // アルファベット連番
     for (const m of marks) {
       const p = panels[m.panel];
       if (!p || !p.img) continue;
       const r = markRadius(p.img);
       if (m.type === "circle") {
-        drawCircle(p.ctx, m.x, m.y, r, start + count);
-        count++;
+        drawCircle(p.ctx, m.x, m.y, r, String(startN + countN), "red");
+        countN++;
+      } else if (m.type === "alpha") {
+        drawCircle(p.ctx, m.x, m.y, r, indexToAlpha(startA + countA), "green");
+        countA++;
       } else {
         drawStar(p.ctx, m.x, m.y, r);
       }
     }
   }
 
-  // 赤丸＋数字
-  function drawCircle(ctx, x, y, r, num) {
+  // 丸＋ラベル（color: "red"=赤丸連番 / "green"=緑丸アルファベット）
+  function drawCircle(ctx, x, y, r, label, color) {
+    const c = color === "green"
+      ? { fill: "rgba(46,160,67,0.9)", stroke: "#1b7a2f" }
+      : { fill: "rgba(255,0,0,0.85)",  stroke: "#b00000" };
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,0,0,0.85)";
+    ctx.fillStyle = c.fill;
     ctx.fill();
     ctx.lineWidth = Math.max(2, r * 0.12);
-    ctx.strokeStyle = "#b00000";
+    ctx.strokeStyle = c.stroke;
     ctx.stroke();
 
     ctx.fillStyle = "#fff";
     ctx.font = `bold ${Math.round(r * 1.1)}px system-ui, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(num), x, y + r * 0.05);
+    ctx.fillText(label, x, y + r * 0.05);
+  }
+
+  // アルファベット ⇔ 番号（0=A, 1=B, ... 25=Z, 26=AA, 27=AB ...）
+  function alphaToIndex(str) {
+    const s = String(str || "A").toUpperCase().replace(/[^A-Z]/g, "");
+    if (!s) return 0;
+    let n = 0;
+    for (const ch of s) n = n * 26 + (ch.charCodeAt(0) - 64); // A=1
+    return n - 1; // 0始まりに補正
+  }
+  function indexToAlpha(index) {
+    let n = Math.max(0, index) + 1; // 1始まりへ
+    let out = "";
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      out = String.fromCharCode(65 + rem) + out;
+      n = Math.floor((n - 1) / 26);
+    }
+    return out;
   }
 
   // 星マーク（5角の星・黄色）
@@ -346,8 +382,9 @@
     });
   });
 
-  // 開始番号を変えたら描き直す
+  // 開始番号・開始文字を変えたら描き直す
   startNum.addEventListener("input", () => redrawAll());
+  startAlpha.addEventListener("input", () => redrawAll());
 
   // Ctrl+Z で取り消し
   document.addEventListener("keydown", (e) => {
