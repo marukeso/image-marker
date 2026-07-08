@@ -74,12 +74,14 @@
     text-transform: uppercase;
   }
 
-  /* 画像パネルを横並び（各400px固定・入りきらなければ折り返し） */
+  /* 画像パネルを横並び（各400px固定・折り返さず横スクロール） */
   .panels {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: var(--gap);
     align-items: flex-start;
+    overflow-x: auto;      /* 横に増えたらスクロール */
+    padding-bottom: 6px;   /* スクロールバーぶんの余白 */
   }
   .panel {
     flex: 0 0 400px;  /* 幅400px固定 */
