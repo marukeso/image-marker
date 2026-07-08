@@ -74,16 +74,33 @@
     text-transform: uppercase;
   }
 
-  /* 3つの画像パネルを横並び */
+  /* 画像パネルを横並び（各400px固定・入りきらなければ折り返し） */
   .panels {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--gap);
     align-items: flex-start;
   }
   .panel {
-    flex: 1 1 0;      /* 3等分 */
+    flex: 0 0 400px;  /* 幅400px固定 */
+    width: 400px;
     min-width: 0;
   }
+
+  /* パネル追加ボタン（末尾に置く「＋」） */
+  .add-panel {
+    flex: 0 0 60px;
+    align-self: stretch;
+    min-height: 200px;
+    border: 2px dashed #bbb;
+    border-radius: 8px;
+    background: #fff;
+    color: #999;
+    font-size: 34px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .add-panel:hover { border-color: #4caf50; color: #4caf50; background: #f6fff7; }
 
   /* キャンバス置き場（兼ドロップ領域） */
   .stage {
@@ -136,14 +153,15 @@
     <button id="saveBtn" disabled>PNGで保存</button>
   </div>
 
-  <div class="panels" id="panels"><!-- パネルはJSで3つ生成 --></div>
-  <p class="hint">各枠にクリックorドロップで画像を読み込み、クリックでマークを置く。番号・アルファベットは3枚を通して置いた順にそれぞれ連番になります。取り消しは全体で直前の1つ。</p>
+  <div class="panels" id="panels"><!-- パネルと「＋」ボタンはJSで生成 --></div>
+  <p class="hint">各枠にクリックorドロップで画像を読み込み、クリックでマークを置く。右の「＋」でパネルを追加（最大8枚）。番号・アルファベットは全パネルを通して置いた順にそれぞれ連番になります。取り消しは全体で直前の1つ。</p>
 
 <script>
 (() => {
   "use strict";
 
-  const PANEL_COUNT = 3;
+  const INITIAL_PANELS = 3;   // 最初に出すパネル数
+  const MAX_PANELS = 8;       // 追加できる上限
   const panelsEl = document.getElementById("panels");
   const undoBtn = document.getElementById("undoBtn");
   const clearBtn = document.getElementById("clearBtn");
@@ -156,8 +174,11 @@
   const panels = [];       // {img, canvas, ctx, stage, placeholder, fileInput}
   let marks = [];          // 全パネル共通のマーク配列 {panel, type, x, y} ※置いた順
 
-  // ---- パネルを3つ生成 ----
-  for (let i = 0; i < PANEL_COUNT; i++) {
+  // ---- パネルを1つ生成して末尾（＋ボタンの手前）に追加 ----
+  function addPanel() {
+    if (panels.length >= MAX_PANELS) return;
+    const index = panels.length;
+
     const panelEl = document.createElement("div");
     panelEl.className = "panel";
 
@@ -166,7 +187,7 @@
 
     const placeholder = document.createElement("div");
     placeholder.className = "placeholder";
-    placeholder.innerHTML = `画像${i + 1}<br>クリックまたはドロップで読み込み`;
+    placeholder.innerHTML = `画像${index + 1}<br>クリックまたはドロップで読み込み`;
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
@@ -178,12 +199,30 @@
 
     stage.append(placeholder, canvas);
     panelEl.append(stage, fileInput);
-    panelsEl.append(panelEl);
+    panelsEl.insertBefore(panelEl, addBtn);   // ＋ボタンの手前に差し込む
 
     const p = { img: null, canvas, ctx, stage, placeholder, fileInput };
     panels.push(p);
-    wirePanel(p, i);
+    wirePanel(p, index);
+    updateAddBtn();
   }
+
+  // 上限に達したら＋ボタンを隠す
+  function updateAddBtn() {
+    addBtn.style.display = panels.length >= MAX_PANELS ? "none" : "";
+  }
+
+  // ---- 「＋」ボタン（パネル追加）----
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "add-panel";
+  addBtn.title = "パネルを追加";
+  addBtn.textContent = "＋";
+  addBtn.addEventListener("click", addPanel);
+  panelsEl.append(addBtn);
+
+  // 最初に3枚ぶん生成
+  for (let i = 0; i < INITIAL_PANELS; i++) addPanel();
 
   // マークの見た目サイズ（画像の大きさに合わせて自動調整）
   function markRadius(img) {
