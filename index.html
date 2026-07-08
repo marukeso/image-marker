@@ -107,6 +107,14 @@
   }
   .add-panel:hover { border-color: #4caf50; color: #4caf50; background: #f6fff7; }
 
+  /* パネル列の上に出す横スクロールバー（下のスクロールと同期） */
+  .scrolltop {
+    overflow-x: auto;
+    overflow-y: hidden;
+    margin-bottom: 4px;
+  }
+  .scrolltop > div { height: 1px; }
+
   /* キャンバス置き場（兼ドロップ領域） */
   .stage {
     position: relative;
@@ -210,11 +218,32 @@
     panels.push(p);
     wirePanel(p, index);
     updateAddBtn();
+    syncTopScrollbar();
   }
 
   // 上限に達したら＋ボタンを隠す
   function updateAddBtn() {
     addBtn.style.display = panels.length >= MAX_PANELS ? "none" : "";
+  }
+
+  // ---- 上部の横スクロールバー（下のパネル列とスクロール同期）----
+  const topbar = document.createElement("div");
+  topbar.className = "scrolltop";
+  const topbarInner = document.createElement("div");
+  topbar.append(topbarInner);
+  panelsEl.parentNode.insertBefore(topbar, panelsEl);
+
+  // 値が違うときだけ相手に反映（互いのscrollイベントで無限ループしない）
+  topbar.addEventListener("scroll", () => {
+    if (panelsEl.scrollLeft !== topbar.scrollLeft) panelsEl.scrollLeft = topbar.scrollLeft;
+  });
+  panelsEl.addEventListener("scroll", () => {
+    if (topbar.scrollLeft !== panelsEl.scrollLeft) topbar.scrollLeft = panelsEl.scrollLeft;
+  });
+
+  // 上部バーの中身幅をパネル列の全幅に合わせる（パネル追加時に呼ぶ）
+  function syncTopScrollbar() {
+    topbarInner.style.width = panelsEl.scrollWidth + "px";
   }
 
   // ---- 「＋」ボタン（パネル追加）----
