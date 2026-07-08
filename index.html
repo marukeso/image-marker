@@ -92,8 +92,11 @@
   /* パネル追加ボタン（末尾に置く「＋」） */
   .add-panel {
     flex: 0 0 60px;
-    align-self: stretch;
-    min-height: 200px;
+    align-self: flex-start;      /* 縦長画像でも伸ばさず上端に揃える */
+    height: 120px;               /* 画像の高さに依存しない固定サイズ */
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border: 2px dashed #bbb;
     border-radius: 8px;
     background: #fff;
